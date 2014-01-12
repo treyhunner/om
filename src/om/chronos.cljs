@@ -42,16 +42,24 @@
   (-stop [_] (remove-watch app-state key))
   IStep
   (-forward [_]
-    (set! idx (inc idx))
-    (reset! app-state (nth history idx)))
+    (let [nidx    (inc idx)
+          history @history]
+      (when (< nidx (count history))
+        (set! idx (inc idx))
+        (reset! app-state (nth history idx)))))
   (-back [_]
-    (set! idx (dec idx))
-    (reset! app-state (nth history idx))))
+    (let [nidx    (dec idx)
+          history @history]
+      (when (>= nidx 0)
+        (set! idx nidx)
+        (reset! app-state (nth history idx))))))))
 
 (defn simple-control
   ([app-state] (simple-control app-state (fn [old new] true)))
   ([app-state pred]
-    (SimpleControl.
-      app-state (atom [@app-state]) 0 (atom (sorted-map)) (atom {})
-      pred (gensym))))
+    (let [history   (atom [@app-state])
+          idx       0
+          tree      (atom (sorted-map))
+          bookmarks (atom {})]
+      (SimpleControl. app-state history idx tree bookmarks pred (gensym)))))
 
