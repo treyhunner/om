@@ -75,6 +75,13 @@
                 :output-dir "examples/graft/out"
                 :source-map true
                 :optimizations :none}}
+             {:id "history"
+              :source-paths ["src" "examples/history"]
+              :compiler {
+                :output-to "examples/history/main.js"
+                :output-dir "examples/history/out"
+                :source-map true
+                :optimizations :none}}
              {:id "tests"
               :source-paths ["src" "examples/tests"]
               :compiler {
