@@ -20,4 +20,5 @@
 
 (defprotocol IBookmark
   (-bookmark [this name])
-  (-jump [this name]))
+  (-jump [this name])
+  (-list [this]))
