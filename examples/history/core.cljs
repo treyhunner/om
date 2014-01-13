@@ -3,8 +3,23 @@
             [om.dom :as dom :include-macros true]
             [om.chronos :as c]))
 
+(enable-console-print!)
+
+(def app-state (atom {:text "Hello world!"}))
+
 (defn widget [data]
   (om/component
-    (dom/div nil "Hello world!")))
+    (dom/div nil (:text data))))
 
-(om/root {} widget (.getElementById js/document "app"))
+(om/root app-state widget (.getElementById js/document "app"))
+
+(comment
+  (def control (c/simple-control app-state))
+
+  (c/record control)
+
+  (swap! app-state assoc :text "Goodbye world!")
+
+  (c/back control)
+  (c/forward control)
+  )
