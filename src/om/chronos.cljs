@@ -1,4 +1,5 @@
-(ns om.chronos)
+(ns om.chronos
+  (:refer-clojure :exclude [-next]))
 
 (defprotocol IHistory
   (-record [this])
@@ -52,7 +53,7 @@
           history @history]
       (when (>= nidx 0)
         (set! idx nidx)
-        (reset! app-state (nth history idx))))))))
+        (reset! app-state (nth history idx))))))
 
 (defn simple-control
   ([app-state] (simple-control app-state (fn [old new] true)))
