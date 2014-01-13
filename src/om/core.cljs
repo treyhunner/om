@@ -157,8 +157,13 @@
          :render
          (fn []
            (this-as this
-             (allow-reads
-               (render (children this)))))}))
+             (let [c (children this)]
+               (allow-reads
+                 (cond
+                   (satisfies? IRender c) (render c)
+                   (.-render c) (.render c)
+                   (array? c ) c
+                   :else (throw (js/Error. (str "Cannot render " c))))))))}))
 
 ;; =============================================================================
 ;; Cursors
