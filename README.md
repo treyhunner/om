@@ -60,6 +60,7 @@ preferred flavors over the `React.DOM` api. Alternative syntaxes will
 be listed here:
 
 * [sablono](http://github.com/r0man/sablono), Hiccup-style
+* [kioo](http://github.com/ckirkendall/kioo), Enlive-style
 
 ## Using it
 
@@ -74,7 +75,7 @@ Your `project.clj` should include something like the following:
   ...
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.clojure/clojurescript "0.0-2138"]
-                 [om "0.1.6"]]
+                 [om "0.1.7"]]
   ...)
 ```
 
@@ -83,7 +84,7 @@ For local development your
 should look something like this:
 
 ```clj
-:cljsbuild { 
+:cljsbuild {
   :builds [{:id "dev"
             :source-paths ["src"]
             :compiler {
@@ -111,7 +112,7 @@ For production your [lein-cljsbuild](http://github.com/emezeske/lein-cljsbuild) 
 like this:
 
 ```clj
-:cljsbuild { 
+:cljsbuild {
   :builds [{:id "release"
             :source-paths ["src"]
             :compiler {
@@ -139,6 +140,7 @@ idea.
 
 * [Worlds: Controlling the Scope of Side Effects](http://www.vpri.org/pdf/tr2011001_final_worlds.pdf)
 * [A Functional I/O System](http://www.ccs.neu.edu/racket/pubs/icfp09-fffk.pdf)
+* [Directness and Liveness in the Morphic User Interface Construction Environment](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.103.600&rep=rep1&type=pdf)
 * [Learnable Programming](http://worrydream.com/LearnableProgramming/)
 
 ## Copyright and license

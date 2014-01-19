@@ -2,7 +2,7 @@
   (:require-macros
     [om.core :refer
       [pure component check allow-reads safe-update!
-       safe-transact! cursor-check tag]])
+       safe-transact! tag]])
   (:require [om.dom :as dom :include-macros true]))
 
 (def ^{:tag boolean :dynamic true} *read-enabled* false)
@@ -298,6 +298,9 @@
     (-value [_] (check val))
     (-state [_] (check state))
     (-path [_] (check path))
+    ITransact
+    (-transact! [_ f]
+      (swap! state f path))
     IEquiv
     (-equiv [_ other]
       (check
@@ -327,14 +330,17 @@
   (doseq [f @refresh-set] (f))
   (set! refresh-queued false))
 
+(def ^:private roots (atom {}))
+
 (defn root
   "Takes an immutable value or value wrapped in an atom, an initial
    function f, and a DOM target. Installs an Om/React render loop. f
    must return an instance that at a minimum implements IRender (it
-   may implement other React life cycle protocols). f must take
-   two arguments, the root cursor and the owning pure node. A
-   cursor is just the original data wrapped in an ICursor instance
-   which maintains path information.
+   may implement other React life cycle protocols). f must take two
+   arguments, the root cursor and the owning pure node. A cursor is
+   just the original data wrapped in an ICursor instance which
+   maintains path information. Only one root render loop allowed per
+   target element. You can remove a root with om.core/remove-root.
 
    Example:
 
@@ -343,18 +349,23 @@
        ...)
      js/document.body)"
   [value f target]
+  ;; only one root render loop per target
+  (let [roots' @roots]
+    (when (contains? roots' target)
+      ((get roots' target))))
   (let [state (if (instance? Atom value)
                 value
                 (atom value))
-        rootf (fn rootf []
-                (swap! refresh-set disj rootf)
-                (let [value  @state
-                      cursor (to-cursor value state)]
-                  (dom/render
-                    (pure #js {:__om_cursor cursor}
-                      (fn [this] (allow-reads (f cursor this))))
-                    target)))]
-    (add-watch state (gensym)
+       rootf (fn rootf []
+               (swap! refresh-set disj rootf)
+               (let [value  @state
+                     cursor (to-cursor value state)]
+                 (dom/render
+                   (pure #js {:__om_cursor cursor}
+                     (fn [this] (allow-reads (f cursor this))))
+                   target)))
+         watch-key (gensym)]
+    (add-watch state watch-key
       (fn [_ _ _ _]
         (when-not (contains? @refresh-set rootf)
           (swap! refresh-set conj rootf))
@@ -363,6 +374,11 @@
           (if (exists? js/requestAnimationFrame)
             (js/requestAnimationFrame render-all)
             (js/setTimeout render-all 16)))))
+    ;; store fn to remove previous root render loop
+    (swap! roots assoc target
+      (fn []
+        (remove-watch state watch-key)
+        (swap! roots dissoc target)))
     (rootf)))
 
 (defn ^:private valid? [m]
@@ -402,12 +418,13 @@
       (apply str "build options contains invalid keys, only :key, "
                  ":react-key, :fn, :and opts allowed, given "
                  (interpose ", " (keys m))))
+    (assert (cursor? cursor)
+      (str "Cannot build Om component from non-cursor " cursor))
     (cond
       (nil? m)
       (tag
         (pure #js {:__om_cursor cursor}
-          (fn [this]
-            (cursor-check cursor (allow-reads (f cursor this)))))
+          (fn [this] (allow-reads (f cursor this))))
         f)
 
       :else
@@ -422,10 +439,8 @@
                      :__om_index (::index m)
                      :key rkey}
             (if (nil? opts)
-              (fn [this]
-                (cursor-check cursor' (allow-reads (f cursor' this))))
-              (fn [this]
-                (cursor-check cursor' (allow-reads (f cursor' this opts))))))
+              (fn [this] (allow-reads (f cursor' this)))
+              (fn [this] (allow-reads (f cursor' this opts)))))
           f)))))
 
 (defn build-all

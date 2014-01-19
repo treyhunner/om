@@ -1,11 +1,11 @@
-(defproject om "0.1.7-SNAPSHOT"
+(defproject om "0.1.8-SNAPSHOT"
   :description "ClojureScript interface to Facebook's React"
   :url "http://github.com/swannodette/om"
   :license {:name "Eclipse"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
-  :jvm-opts ^:replace ["-Xmx512m" "-server"]
-  
+  :jvm-opts ^:replace ["-Xms512m" "-Xmx512m" "-server"]
+
   :source-paths  ["src"]
 
   :dependencies [[org.clojure/clojure "1.5.1"]
@@ -15,7 +15,7 @@
 
   :plugins [[lein-cljsbuild "1.0.1"]]
 
-  :cljsbuild { 
+  :cljsbuild {
     :builds [{:id "test"
               :source-paths ["src" "test"]
               :compiler {
