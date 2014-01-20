@@ -384,7 +384,8 @@
    arguments, the root cursor and the owning pure node. A cursor is
    just the original data wrapped in an ICursor instance which
    maintains path information. Only one root render loop allowed per
-   target element. You can remove a root with om.core/remove-root.
+   target element. om.core/root is idempotent, if called again on
+   the same target element the previous render loop will be replaced.
 
    Example:
 
