@@ -1,4 +1,4 @@
-(defproject om "0.2.2-SNAPSHOT"
+(defproject om "0.2.3-SNAPSHOT"
   :description "ClojureScript interface to Facebook's React"
   :url "http://github.com/swannodette/om"
   :license {:name "Eclipse"
@@ -59,6 +59,13 @@
               :compiler {
                 :output-to "examples/animation/main.js"
                 :output-dir "examples/animation/out"
+                :source-map true
+                :optimizations :none}}
+             {:id "shared"
+              :source-paths ["src" "examples/shared/src"]
+              :compiler {
+                :output-to "examples/shared/main.js"
+                :output-dir "examples/shared/out"
                 :source-map true
                 :optimizations :none}}
              {:id "typeahead"
