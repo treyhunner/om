@@ -20,13 +20,13 @@
   [(.-width size) (.-height size)])
 
 (defn to? [owner next-props next-state k]
-  (or (and (not (om/get-state owner k))
+  (or (and (not (om/get-render-state owner k))
            (k next-state))
       (and (not (k (om/get-props owner)))
            (k next-props))))
 
 (defn from? [owner next-props next-state k]
-  (or (and (om/get-state owner k)
+  (or (and (om/get-render-state owner k)
            (not (k next-state)))
       (and (k (om/get-props owner))
            (not (k next-props)))))
@@ -41,52 +41,53 @@
 ;; =============================================================================
 ;; Generic Draggable
 
-(defn dragging? [item owner]
-  (or (:dragging item)
-      (om/get-pending-state owner :dragging)))
+(defn dragging? [owner]
+  (om/get-state owner :dragging))
 
-(defn drag-start [e item owner opts]
-  (when-not (dragging? item owner)
-    (let [el (om/get-node owner "draggable")
-          drag-start (location e)
-          el-offset (element-offset el)
+(defn drag-start [e item owner]
+  (when-not (dragging? owner)
+    (let [el          (om/get-node owner "draggable")
+          state       (om/get-state owner)
+          drag-start  (location e)
+          el-offset   (element-offset el)
           drag-offset (vec (map - el-offset drag-start))]
       ;; if in a sortable need to wait for sortable to
       ;; initiate dragging
-      (when-not (:delegate opts)
+      (when-not (:delegate state)
         (om/set-state! owner :dragging true))
       (doto owner
         (om/set-state! :location
-          ((or (:constrain opts) identity) el-offset))
+          ((or (:constrain state) identity) el-offset))
         (om/set-state! :drag-offset drag-offset))
-      (when-let [c (:chan opts)]
+      (when-let [c (:chan state)]
         (put! c
           {:event :drag-start
            :id (:id item)
            :location (vec (map + drag-start drag-offset))})))))
 
-(defn drag-stop [e item owner opts]
-  (when (dragging? item owner)
-    (when (om/get-state owner :dragging)
-      (om/set-state! owner :dragging false))
-    ;; rendering order issues otherwise
-    (when-not (:delegate opts)
-      (doto owner
-        (om/set-state! :location nil)
-        (om/set-state! :drag-offset nil)))
-    (when-let [c (:chan opts)]
-      (put! c {:event :drag-stop :id (:id item)}))))
+(defn drag-stop [e item owner]
+  (when (dragging? owner)
+    (let [state (om/get-state owner)]
+      (when (:dragging state)
+        (om/set-state! owner :dragging false))
+      ;; rendering order issues otherwise
+      (when-not (:delegate state)
+        (doto owner
+          (om/set-state! :location nil)
+          (om/set-state! :drag-offset nil)))
+      (when-let [c (:chan state)]
+        (put! c {:event :drag-stop :id (:id item)})))))
 
-(defn drag [e item owner opts]
+(defn drag [e item owner]
   (let [state (om/get-state owner)]
-    (when (dragging? item owner)
-      (let [loc ((or (:constrain opts) identity)
+    (when (dragging? owner)
+      (let [loc ((or (:constrain state) identity)
                   (vec (map + (location e) (:drag-offset state))))]
         (om/set-state! owner :location loc)
-        (when-let [c (:chan opts)]
+        (when-let [c (:chan state)]
           (put! c {:event :drag :location loc :id (:id item)}))))))
 
-(defn draggable [item owner opts]
+(defn draggable [item owner]
   (reify
     om/IDidMount
     (did-mount [_ _]
@@ -95,14 +96,14 @@
                      gstyle/getSize gsize->vec)]
         (om/set-state! owner :dimensions dims)
         ;; let cell dimension listeners know
-        (when-let [dims-chan (:dims-chan opts)]
+        (when-let [dims-chan (:dims-chan (om/get-state owner))]
           (put! dims-chan dims))))
     om/IWillUpdate
     (will-update [_ next-props next-state]
       ;; begin dragging, need to track events on window
       (when (or (to? owner next-props next-state :dragging))
-        (let [mouse-up   (om/pure-bind drag-stop next-props owner opts)
-              mouse-move (om/pure-bind drag next-props owner opts)]
+        (let [mouse-up   (om/pure-bind drag-stop next-props owner)
+              mouse-move (om/pure-bind drag next-props owner)]
           (om/set-state! owner :window-listeners
             [mouse-up mouse-move])
           (doto js/window
@@ -115,11 +116,10 @@
           (doto js/window
             (events/unlisten EventType.MOUSEUP mouse-up)
             (events/unlisten EventType.MOUSEMOVE mouse-move)))))
-    om/IRender
-    (render [_]
-      (let [state (om/get-state owner)
-            style (cond
-                    (dragging? item owner)
+    om/IRenderState
+    (render-state [_ state]
+      (let [style (cond
+                    (dragging? owner)
                     (let [[x y] (:location state)
                           [w h] (:dimensions state)]
                       #js {:position "absolute"
@@ -128,13 +128,13 @@
                     :else
                     #js {:position "static" :z-index 0})]
         (dom/li
-          #js {:className (when (dragging? item owner) "dragging")
+          #js {:className (when (dragging? owner) "dragging")
                :style style
                :ref "draggable"
-               :onMouseDown (om/pure-bind drag-start item owner opts)
-               :onMouseUp   (om/pure-bind drag-stop item owner opts)
-               :onMouseMove (om/pure-bind drag item owner opts)}
-          (om/build (:view opts) item {:opts opts}))))))
+               :onMouseDown (om/pure-bind drag-start item owner)
+               :onMouseUp   (om/pure-bind drag-stop item owner)
+               :onMouseMove (om/pure-bind drag item owner)}
+          (om/build (:view state) item))))))
 
 ;; =============================================================================
 ;; Generic Sortable
@@ -168,7 +168,7 @@
               (recur (inc i) (next v) (conj ret y)))))))))
 
 (defn sorting? [owner]
-  (om/get-pending-state owner :sorting))
+  (om/get-state owner :sorting))
 
 (defn start-sort [owner e]
   (let [state (om/get-state owner)
@@ -220,7 +220,7 @@
     :drag       (update-drop owner e)
     nil))
 
-(defn sortable [{:keys [items sort]} owner opts]
+(defn sortable [{:keys [items sort]} owner]
   (reify
     om/IInitState
     (init-state [_] {:sort (om/value sort)})
@@ -253,28 +253,23 @@
       (when-not (om/get-state owner :location)
         (om/set-state! owner :location
           (element-offset (om/get-node owner "sortable")))))
-    om/IRender
-    (render [_]
-      (let [state (om/get-state owner)]
-        (dom/ul #js {:className "sortable" :ref "sortable"}
-          (into-array
-            (map
-              (fn [id]
-                (if-not (= id ::spacer)
-                  (om/build draggable (items id)
-                    {:key :id
-                     :opts (let [{:keys [constrain chans]} state]
-                             (assoc opts 
-                               :constrain constrain
-                               :chan      (:drag-chan chans)
-                               :dims-chan (:dims-chan chans)
-                               :delegate  true))
-                     :fn (fn [x]
-                           (if (= (:id x) (:sorting state))
-                             (assoc x :dragging true)
-                             x))})
-                  (sortable-spacer (second (:cell-dimensions state)))))
-              (:sort state))))))))
+    om/IRenderState
+    (render-state [_ state]
+      (apply dom/ul #js {:className "sortable" :ref "sortable"}
+        (map
+          (fn [id]
+            (if-not (= id ::spacer)
+              (om/build draggable (items id)
+                (let [{:keys [constrain chans view]} state]
+                  {:key :id
+                   :init-state {:view      view
+                                :chan      (:drag-chan chans)
+                                :dims-chan (:dims-chan chans)
+                                :delegate  true}
+                   :state {:constrain constrain
+                           :dragging  (= id (:sorting state))}}))
+              (sortable-spacer (second (:cell-dimensions state)))))
+          (:sort state))))))
 
 ;; =============================================================================
 ;; Example
@@ -286,7 +281,7 @@
     (atom {:items items
            :sort (into [] (keys items))})))
 
-(defn item [the-item owner opts]
+(defn item [the-item owner]
   (om/component (dom/span nil (str "Item " (:title the-item)))))
 
 (om/root app-state
@@ -294,5 +289,5 @@
     (om/component
       (dom/div nil
         (dom/h2 nil "Sortable example")
-        (om/build sortable app {:opts {:view item}}))))
+        (om/build sortable app {:init-state {:view item}}))))
   (.getElementById js/document "app"))

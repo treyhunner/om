@@ -36,6 +36,9 @@
 (defprotocol IRender
   (render [this]))
 
+(defprotocol IRenderState
+  (render-state [this state]))
+
 ;; =============================================================================
 ;; Om Protocols
 
@@ -70,6 +73,25 @@
   [x]
   (aget (.-props x) "__om_cursor"))
 
+(defn get-state
+  "Takes a pure owning component and sequential list of keys and
+   returns a property in the component local state if it exists. Always
+   returns pending state."
+  ([owner]
+    (let [state (.-state owner)]
+      (or (aget state "__om_pending_state")
+          (aget state "__om_state"))))
+  ([owner korks]
+    (cond
+      (not (sequential? korks))
+      (get (get-state owner) korks)
+
+      (empty? korks)
+      (get-state owner)
+
+      :else
+      (get-in (get-state owner) korks))))
+
 (defn ^:private merge-pending-state [owner]
   (let [state (.-state owner)]
     (when-let [pending-state (aget state "__om_pending_state")]
@@ -78,14 +100,29 @@
         (aset "__om_state" pending-state)
         (aset "__om_pending_state" nil)))))
 
+(defn ^:private merge-props-state
+  ([owner] (merge-props-state owner nil))
+  ([owner props]
+    (let [props (or props (.-props owner))]
+      (when-let [props-state (aget props "__om_state")]
+        (let [state (.-state owner)]
+          (aset state "__om_pending_state"
+               (merge (or (aget state "__om_pending_state")
+                          (aget state "__om_state"))
+                      props-state))
+          (aset props "__om_state" nil))))))
+
 (def ^:private Pure
   (js/React.createClass
     #js {:getInitialState
          (fn []
            (this-as this
-             (let [c (children this)]
+             (let [c      (children this)
+                   props  (.-props this)
+                   istate (aget props "__om_init_state")]
+               (aset props "__om_init_state" nil)
                #js {:__om_state
-                    (merge {}
+                    (merge istate
                       (when (satisfies? IInitState c)
                         (allow-reads (init-state c))))})))
          :shouldComponentUpdate
@@ -93,7 +130,10 @@
            (this-as this
              (allow-reads
                (let [props (.-props this)
+                     state (.-state this)
                      c     (children this)]
+                 ;; need to merge in props state first
+                 (merge-props-state this next-props)
                  (if (satisfies? IShouldUpdate c)
                    (should-update c
                      (get-props #js {:props next-props})
@@ -103,7 +143,9 @@
                                       (-value (aget next-props "__om_cursor"))))
                      true
 
-                     (not (nil? (aget (.-state this) "__om_pending_state")))
+                     (and (not (nil? (aget state "__om_pending_state")))
+                          (not= (aget state "__om_pending_state")
+                                (aget state "__om_state")))
                      true
 
                      (not (== (aget props "__om_index") (aget next-props "__om_index")))
@@ -113,6 +155,7 @@
          :componentWillMount
          (fn []
            (this-as this
+             (merge-props-state this)
              (let [c (children this)]
                (when (satisfies? IWillMount c)
                  (allow-reads (will-mount c))))
@@ -161,6 +204,7 @@
                (allow-reads
                  (cond
                    (satisfies? IRender c) (render c)
+                   (satisfies? IRenderState c) (render-state c (get-state this))
                    (.-render c) (.render c)
                    (array? c ) c
                    :else (throw (js/Error. (str "Cannot render " c))))))))}))
@@ -378,11 +422,12 @@
     (swap! roots assoc target
       (fn []
         (remove-watch state watch-key)
-        (swap! roots dissoc target)))
+        (swap! roots dissoc target)
+        (js/React.unmountComponentAtNode target)))
     (rootf)))
 
 (defn ^:private valid? [m]
-  (every? #{:key :react-key :fn :opts ::index} (keys m)))
+  (every? #{:key :react-key :fn :init-state :state :opts ::index} (keys m)))
 
 (defn build
   "Builds a Om component. Takes an IRender instance returning function
@@ -399,24 +444,27 @@
 
    m - a map the following keys are allowed:
 
-     :key       - a keyword that should be used to look up the key used by
-                  React itself when rendering sequential things.
-     :react-key - an explicit react key
-     :fn        - a function to apply to the data at the relative path before
-                  invoking f.
-     :opts      - a map of options to pass to the component.
+     :key        - a keyword that should be used to look up the key used by
+                   React itself when rendering sequential things.
+     :react-key  - an explicit react key
+     :fn         - a function to apply to the data at the relative path before
+                   invoking f.
+     :init-state - a map of initial state to pass to the component.
+     :state      - a map of state to pass to the component, will be merged in.
+     :opts       - a map of values. Can be used to pass side information down
+                   the render tree.
 
    Example:
 
      (build list-of-gadgets cursor
-        {:opts {:event-chan ...
-                :narble ...}})
+        {:init-state {:event-chan ...
+                      :narble ...}})
   "
   ([f cursor] (build f cursor nil))
   ([f cursor m]
     (assert (valid? m)
-      (apply str "build options contains invalid keys, only :key, "
-                 ":react-key, :fn, :and opts allowed, given "
+      (apply str "build options contains invalid keys, only :key, :react-key, "
+                 ":fn, :init-state, :state, and :opts allowed, given "
                  (interpose ", " (keys m))))
     (assert (cursor? cursor)
       (str "Cannot build Om component from non-cursor " cursor))
@@ -428,7 +476,7 @@
         f)
 
       :else
-      (let [{:keys [key opts]} m
+      (let [{:keys [key state init-state opts]} m
             dataf   (get m :fn)
             cursor' (if-not (nil? dataf) (dataf cursor) cursor)
             rkey    (if-not (nil? key)
@@ -437,6 +485,8 @@
         (tag
           (pure #js {:__om_cursor cursor'
                      :__om_index (::index m)
+                     :__om_init_state init-state
+                     :__om_state state
                      :key rkey}
             (if (nil? opts)
               (fn [this] (allow-reads (f cursor' this)))
@@ -560,41 +610,23 @@
         (swap! (-state cursor) clone)
         (swap! (-state cursor) update-in path clone)))))
 
-(defn get-state
-  "Takes a pure owning component and sequential list of keys and
-   returns a property in the component local state if it exists. Will
-   never return pending state values."
-  ([owner] (aget (.-state owner) "__om_state"))
-  ([owner korks]
-    (cond
-      (not (sequential? korks))
-      (get (aget (.-state owner) "__om_state") korks)
-
-      (empty? korks)
-      (get-state owner)
-
-      :else
-      (get-in (aget (.-state owner) "__om_state") korks))))
-
-(defn get-pending-state
-  "EXPERIMENTAL: Takes a pure owning component and sequential list of
-   keys and returns a property in the component local if it
-   exists. Returns values from the pending state. If there is no
-   pending state returns values from the current state."
+(defn get-render-state
+  "Takes a pure owning component and sequential list of
+   keys and returns a property in the component local state if it
+   exists. Returns values from the pending state. Always returns the
+   rendered state, not the pending state."
   ([owner]
-    (let [state (.-state owner)]
-      (or (aget state "__om_pending_state")
-          (aget state "__om_state"))))
+    (aget (.-state owner) "__om_state"))
   ([owner korks]
     (cond
       (not (sequential? korks))
-      (get (get-pending-state owner) korks)
+      (get (get-render-state owner) korks)
 
       (empty? korks)
-      (get-pending-state owner)
+      (get-render-state owner)
 
       :else
-      (get-in (get-pending-state owner) korks))))
+      (get-in (get-render-state owner) korks))))
 
 (defn bind
   "Convenience function for creating event handlers on cursors. Takes
